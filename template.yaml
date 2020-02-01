@@ -1,0 +1,181 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Experimenting with S3 access points
+Parameters: 
+  BucketName: 
+    Type: String
+    Description: Name of the S3 bucket we're using to experiment with S3 access points
+  IamUser:
+    Type: String
+    Description: IAM user that's going to be allowed to assume roles created by the template
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID where API calls to S3 endpoints are going to be made from
+  ChefAccessPointName:
+    Type: String
+    Description: The name of the S3 access point for the chef to use
+    Default: 'chef-access-point'
+  KetoDieterAccessPointName:
+    Type: String
+    Description: The name of the S3 access point for the keto dieter to use
+    Default: 'keto-access-point'
+  OmnivoreAccessPointName:
+    Type: String
+    Description: The name of the S3 access point for the omnivore to use
+    Default: 'omnivore-access-point'
+
+Resources:
+
+  YummyFoodS3Bucket:
+    Type: 'AWS::S3::Bucket'
+    DeletionPolicy: Delete
+    Properties:
+      AccessControl: Private
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+          - ServerSideEncryptionByDefault: 
+              SSEAlgorithm: AES256
+      BucketName: !Ref BucketName
+      PublicAccessBlockConfiguration: 
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+
+  YummyFoodS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: !Ref YummyFoodS3Bucket
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Action: 's3:*'
+          Principal:
+            AWS: '*'
+          Resource: !Sub 'arn:aws:s3:::${YummyFoodS3Bucket}/*'
+          Condition: 
+            StringEquals: 
+              s3:DataAccessPointAccount: !Sub '${AWS::AccountId}'
+
+  ChefRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:user/${IamUser}'
+            Action:
+              - 'sts:AssumeRole'
+      Description: IAM role for the Chef
+
+  OmnivoreRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:user/${IamUser}'
+            Action:
+              - 'sts:AssumeRole'
+      Description: IAM role for the omnivore
+
+  KetoDieterRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:user/${IamUser}'
+            Action:
+              - 'sts:AssumeRole'
+      Description: IAM role for the Keto Dieter
+      
+  ChefAccessPoint:
+    Type: 'AWS::S3::AccessPoint'
+    Properties: 
+      Bucket: !Ref YummyFoodS3Bucket
+      Name: !Ref ChefAccessPointName
+      Policy: 
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Action: 's3:PutObject'
+          Principal:
+            AWS: !GetAtt ChefRole.Arn
+          Resource: !Sub 'arn:aws:s3:${AWS::Region}:${AWS::AccountId}:accesspoint/${ChefAccessPointName}/object/*'
+      PublicAccessBlockConfiguration: 
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+      VpcConfiguration:
+          VpcId: !Ref VpcId
+
+  OmnivoreAccessPoint:
+    Type: 'AWS::S3::AccessPoint'
+    Properties: 
+      Bucket: !Ref YummyFoodS3Bucket
+      Name: !Ref OmnivoreAccessPointName
+      Policy: 
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Action: 's3:GetObject'
+          Principal:
+            AWS: !GetAtt OmnivoreRole.Arn
+          Resource: !Sub 'arn:aws:s3:${AWS::Region}:${AWS::AccountId}:accesspoint/${OmnivoreAccessPointName}/object/*'
+      PublicAccessBlockConfiguration: 
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+      VpcConfiguration:
+          VpcId: !Ref VpcId
+      
+  KetoDieterAccessPoint:
+    Type: 'AWS::S3::AccessPoint'
+    Properties: 
+      Bucket: !Ref YummyFoodS3Bucket
+      Name: !Ref KetoDieterAccessPointName
+      Policy: 
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Action: 's3:GetObject'
+          Principal:
+            AWS: !GetAtt KetoDieterRole.Arn
+          Resource: !Sub 'arn:aws:s3:${AWS::Region}:${AWS::AccountId}:accesspoint/${KetoDieterAccessPointName}/object/keto/*'
+      PublicAccessBlockConfiguration: 
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+      VpcConfiguration:
+          VpcId: !Ref VpcId
+
+Outputs:
+  ChefRoleArn:
+    Description: ARN of the chef IAM role
+    Value: !GetAtt ChefRole.Arn
+  ChefAccessPointArn:
+    Description: ARN of the access point for Chef
+    Value: !Sub 'arn:aws:s3:${AWS::Region}:${AWS::AccountId}:accesspoint/${ChefAccessPointName}'
+  KetoDieterRoleArn:
+    Description: ARN of the chef IAM role
+    Value: !GetAtt KetoDieterRole.Arn
+  KetoDieterAccessPointArn:
+    Description: ARN of the access point for Keto Dieter
+    Value: !Sub 'arn:aws:s3:${AWS::Region}:${AWS::AccountId}:accesspoint/${KetoDieterAccessPointName}'
+  OmnivoreRoleArn:
+    Description: ARN of the chef IAM role
+    Value: !GetAtt OmnivoreRole.Arn
+  OmnivoreAccessPointArn:
+    Description: ARN of the access point for Omnivore
+    Value: !Sub 'arn:aws:s3:${AWS::Region}:${AWS::AccountId}:accesspoint/${OmnivoreAccessPointName}'
+  
